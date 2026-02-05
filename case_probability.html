@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Case Resolution Probability</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body style="font-family: Arial; max-width: 700px; margin: auto;">
+
+<h2>Case Resolution Probability Model</h2>
+
+<p>
+Office reports: <b>80% resolved within 3 months</b><br>
+Model: <b>Lognormal</b>
+</p>
+
+<label>Case age (months): </label>
+<input type="range" min="0" max="3" step="0.05" value="0" id="ageSlider">
+<span id="ageValue">0</span>
+
+<p id="probText"></p>
+<p id="medianText"></p>
+
+<canvas id="probChart"></canvas>
+
+<script>
+// --- Lognormal helpers ---
+function lognormalCDF(x, mu, sigma) {
+  return 0.5 * (1 + erf((Math.log(x) - mu) / (sigma * Math.sqrt(2))));
+}
+
+function lognormalQuantile(p, mu, sigma) {
+  return Math.exp(mu + sigma * Math.sqrt(2) * invErf(2*p - 1));
+}
+
+// Error function approximation
+function erf(x) {
+  const sign = Math.sign(x);
+  x = Math.abs(x);
+  const a1=0.254829592, a2=-0.284496736, a3=1.421413741;
+  const a4=-1.453152027, a5=1.061405429, p=0.3275911;
+  const t=1/(1+p*x);
+  const y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+  return sign*y;
+}
+
+function invErf(x) {
+  const a = 0.147;
+  const ln = Math.log(1 - x*x);
+  const part1 = 2/(Math.PI*a) + ln/2;
+  const part2 = ln/a;
+  return Math.sign(x)*Math.sqrt(Math.sqrt(part1*part1 - part2) - part1);
+}
+
+// --- Model calibration ---
+const sigma = 0.6;
+const deadline = 3;
+const targetP = 0.80;
+
+// Solve mu so P(T<=3)=0.8
+const q = Math.exp(sigma * Math.sqrt(2) * invErf(2*targetP - 1));
+const mu = Math.log(deadline / q);
+
+// --- Chart ---
+const ctx = document.getElementById('probChart');
+const labels = [];
+const data = [];
+
+for (let t=0; t<=3; t+=0.05) {
+  const Ft = lognormalCDF(t+0.0001, mu, sigma);
+  const F3 = lognormalCDF(3, mu, sigma);
+  const P = (F3 - Ft)/(1 - Ft);
+  labels.push(t.toFixed(2));
+  data.push(P);
+}
+
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: labels,
+    datasets: [{
+      label: 'P(finish by 3 months | survived to t)',
+      data: data,
+      borderWidth: 2
+    }]
+  },
+  options: {
+    scales: {
+      y: { min: 0, max: 1 }
+    }
+  }
+});
+
+// --- Interaction ---
+const slider = document.getElementById("ageSlider");
+const ageValue = document.getElementById("ageValue");
+const probText = document.getElementById("probText");
+const medianText = document.getElementById("medianText");
+
+function update() {
+  const t = parseFloat(slider.value);
+  ageValue.textContent = t.toFixed(2);
+
+  const Ft = lognormalCDF(t+0.0001, mu, sigma);
+  const F3 = lognormalCDF(3, mu, sigma);
+
+  const P = (F3 - Ft)/(1 - Ft);
+
+  const medianProb = 0.5*(1 - Ft) + Ft;
+  const medianFinish = lognormalQuantile(medianProb, mu, sigma);
+
+  probText.innerHTML =
+    "Chance it finishes by 3 months: <b>" + (P*100).toFixed(1) + "%</b>";
+
+  medianText.innerHTML =
+    "Likely finish time (median): <b>" + medianFinish.toFixed(2) + " months</b>";
+}
+
+slider.oninput = update;
+update();
+</script>
+
+</body>
+</html>
